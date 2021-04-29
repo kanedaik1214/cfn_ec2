@@ -1,0 +1,204 @@
+Description: test
+
+Parameters:
+  AvailabilityZone:
+    Type: String
+    Description: "Please Select Avalability Zone to Deploy Compute Node"
+    AllowedValues:
+      - ap-northeast-1a
+      - ap-northeast-1c
+      - ap-northeast-1d
+
+  AMI:
+    Type: String
+    Description: "Please Input AMI ID for Compute Node"
+
+  KeyPair:
+    Type: String
+    Description: "Please Input KeyPair Name"
+
+  ComputeInstanceNumber:
+    Type: Number
+    Description: "Please Input The Number of Compute Node"
+
+  InstanceType:
+    Type: String
+    Description: "Please Input Instance Type for Compute Node"
+
+  EBSVolumeSize:
+    Type: Number
+    Description: "Please Input EBS Volume Size for Each Compute Node"
+
+  Ec2ImageId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: "Amazon Linx 2 Latest Version"
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "VPC-${AWS::StackName}"
+
+  # Subnet
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1a
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "Public-Subnet-${AWS::StackName}"
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref AvailabilityZone
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "Private-Subnet-${AWS::StackName}"
+
+  # InternetGateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  VPCGatewayAttachment1:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # RouteTable
+  RouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  RouteIGWforRouteTable1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Subnet and RouteTable Association
+  SubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable1
+      SubnetId: !Ref PublicSubnet
+
+  # SecurityGroup
+  SecurityGroup1:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: public_ssh
+      GroupName: "public_ssh"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: -1
+          CidrIp: 10.0.0.0/16
+
+  SecurityGroup2:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: private_ssh
+      GroupName: "private_ssh"
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 10.0.0.0/16
+
+  # Placement Group
+  PlacementGroup:
+    Type: AWS::EC2::PlacementGroup
+    Properties:
+      Strategy: cluster
+
+  # EC2 Bastion Instance
+  BastionInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref KeyPair
+      DisableApiTermination: false 
+      ImageId: !Ref Ec2ImageId
+      InstanceType: m5.xlarge
+      Monitoring: true
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          SubnetId: !Ref PublicSubnet
+          GroupSet:
+            - !Ref SecurityGroup1
+      Tags:
+        - Key: Name
+          Value: !Sub "Bastion-Instance-${AWS::StackName}"
+
+  # EC2 Compute Instance
+  LaunchTemplate:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: !Sub 'launch-template-for-auto-scaling-${AWS::StackName}'
+      LaunchTemplateData:
+        TagSpecifications:
+        - ResourceType: instance
+          Tags:
+          - Key: Name
+            Value: !Sub "Compute_Instance_${AWS::StackName}"
+        BlockDeviceMappings:
+          - Ebs:
+              VolumeSize: !Ref EBSVolumeSize
+              VolumeType: gp2
+            DeviceName: /dev/xvda
+        ImageId: !Ref AMI
+        InstanceType: !Ref InstanceType
+        Monitoring:
+          Enabled: true
+        KeyName: !Ref KeyPair
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: false
+            Groups:
+              - !Ref SecurityGroup2
+            DeleteOnTermination: true
+
+  ComputeASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "ASG-${AWS::StackName}"
+      MinSize: !Ref ComputeInstanceNumber
+      MaxSize: !Ref ComputeInstanceNumber
+      DesiredCapacity: !Ref ComputeInstanceNumber
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: 1
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet
+      PlacementGroup: !Ref PlacementGroup
+
+Outputs:
+  PublicIP:
+    Description: Public IP of Bastion Instance
+    Value:
+      Fn::GetAtt:
+      - BastionInstance
+      - PublicIp
+
+
+
+
+
