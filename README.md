@@ -19,3 +19,11 @@
 - CloudFormation スタックを削除することで、EC2 含めて全てのリソースが削除されます。
 - コンピュートノードは Cluster Placement Group 内に作成されます。
 - インスタンス不足により起動に失敗した場合、アベイラビリティゾーンを変えて再度実行してください。
+- 以下のインスタンスタイプ設定時、インターフェースタイプに EFA が設定されます。
+  - c5n.18xlarge
+  - p3dn.24xlarge
+  - m5n.24xlarge
+  - m5dn.24xlarge
+  - r5dn.24xlarge
+  - r5n.24xlarge
+  - i3en.24xlarge
