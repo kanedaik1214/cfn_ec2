@@ -34,6 +34,9 @@ Parameters:
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
     Description: "Amazon Linx 2 Latest Version"
 
+Conditions:
+  InstanceTypeEfa: !Or [!Equals [!Ref InstanceType, "c5n.18xlarge"], !Equals [!Ref InstanceType, "p3dn.24xlarge"], !Equals [!Ref InstanceType, "m5n.24xlarge"], !Equals [!Ref InstanceType, "m5dn.24xlarge"], !Equals [!Ref InstanceType, "r5dn.24xlarge"], !Equals [!Ref InstanceType, "r5n.24xlarge"], !Equals [!Ref InstanceType, "i3en.24xlarge"]]
+
 Resources:
   # VPC
   VPC:
@@ -170,11 +173,12 @@ Resources:
           Enabled: true
         KeyName: !Ref KeyPair
         NetworkInterfaces:
-          - DeviceIndex: 0
-            AssociatePublicIpAddress: false
-            Groups:
-              - !Ref SecurityGroup2
-            DeleteOnTermination: true
+            - DeviceIndex: 0
+              AssociatePublicIpAddress: false
+              Groups:
+                - !Ref SecurityGroup2
+              DeleteOnTermination: true
+              InterfaceType: !If [InstanceTypeEfa, "efa", "interface"]
 
   ComputeASG:
     Type: AWS::AutoScaling::AutoScalingGroup
